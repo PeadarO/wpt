@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<title>ScrollTimelines may trigger multiple style/layout passes</title>
+<link rel="help" src="https://github.com/w3c/csswg-drafts/issues/5261">
+<link rel="help" src="https://drafts.csswg.org/scroll-animations-1/#avoiding-cycles">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="/web-animations/testcommon.js"></script>
+<style>
+  @keyframes expand {
+    from { width: 100px; }
+    to { width: 100px; }
+  }
+  @scroll-timeline timeline {
+    source: selector(#scroller);
+    time-range: 10s;
+  }
+  main {
+    height: 0px;
+    overflow: hidden;
+  }
+  #scroller {
+    height: 100px;
+    overflow: scroll;
+  }
+  #scroller > div {
+    height: 200px;
+  }
+  #element {
+    width: 1px;
+    animation: expand 10s timeline;
+  }
+  /* Ensure stable expectations if feature is not supported */
+  @supports not (animation-timeline:foo) {
+    #element { animation-play-state: paused; }
+  }
+</style>
+<main id=main></main>
+<div id=element></div>
+<script>
+    promise_test(async () => {
+      await waitForNextFrame();
+      return new Promise(resolve => {
+        let scroller = document.createElement('div');
+        scroller.setAttribute('id', 'scroller');
+        scroller.append(document.createElement('div'));
+        main.append(scroller);
+        (new ResizeObserver(resolve)).observe(element);
+      }).then(entries => {
+        // According to the basic rules of the spec [1], the timeline is now
+        // inactive, because #scroller did not have a layout box at the time
+        // style recalc for #element happened.
+        //
+        // However, an additional style/layout pass should take place
+        // (before resize observer deliveries) if we detect new ScrollTimelines
+        // in this situation, hence we ultimately do expect the animation to
+        // apply [2].
+        //
+        // [1] https://drafts.csswg.org/scroll-animations-1/#avoiding-cycles
+        // [2] https://github.com/w3c/csswg-drafts/issues/5261
+        assert_equals(entries.length, 1);
+        assert_equals(entries[0].contentBoxSize.length, 1);
+        assert_equals(entries[0].contentBoxSize[0].inlineSize, 100);
+      });
+    }, 'Multiple style/layout passes occur when necessary');
+</script>
